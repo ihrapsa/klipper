@@ -1,4 +1,4 @@
-// samd21 serial port
+// samd51 serial port
 //
 // Copyright (C) 2018-2019  Kevin O'Connor <kevin@koconnor.net>
 //
@@ -10,7 +10,7 @@
 #include "command.h" // DECL_CONSTANT_STR
 #include "internal.h" // enable_pclock
 #include "sched.h" // DECL_INIT
-#include "serial_pins.h" // GPIO_Rx
+#include "samd51_serial_pins.h" // GPIO_Rx
 
 DECL_CONSTANT_STR("RESERVE_PINS_serial", GPIO_Rx_NAME "," GPIO_Tx_NAME);
 
@@ -18,32 +18,50 @@ DECL_CONSTANT_STR("RESERVE_PINS_serial", GPIO_Rx_NAME "," GPIO_Tx_NAME);
   #define SERCOMx                 SERCOM0
   #define SERCOMx_GCLK_ID_CORE    SERCOM0_GCLK_ID_CORE
   #define ID_SERCOMx              ID_SERCOM0
-  #define SERCOMx_IRQn            SERCOM0_IRQn
+  #define SERCOMx_0_IRQn          SERCOM0_0_IRQn
+  #define SERCOMx_2_IRQn          SERCOM0_2_IRQn
 #elif CONFIG_ATSAMD_SERIAL_SERCOM1
   #define SERCOMx                 SERCOM1
   #define SERCOMx_GCLK_ID_CORE    SERCOM1_GCLK_ID_CORE
   #define ID_SERCOMx              ID_SERCOM1
-  #define SERCOMx_IRQn            SERCOM1_IRQn
+  #define SERCOMx_0_IRQn          SERCOM1_0_IRQn
+  #define SERCOMx_2_IRQn          SERCOM1_2_IRQn
 #elif CONFIG_ATSAMD_SERIAL_SERCOM2
   #define SERCOMx                 SERCOM2
   #define SERCOMx_GCLK_ID_CORE    SERCOM2_GCLK_ID_CORE
   #define ID_SERCOMx              ID_SERCOM2
-  #define SERCOMx_IRQn            SERCOM2_IRQn
+  #define SERCOMx_0_IRQn          SERCOM2_0_IRQn
+  #define SERCOMx_2_IRQn          SERCOM2_2_IRQn
 #elif CONFIG_ATSAMD_SERIAL_SERCOM3
   #define SERCOMx                 SERCOM3
   #define SERCOMx_GCLK_ID_CORE    SERCOM3_GCLK_ID_CORE
   #define ID_SERCOMx              ID_SERCOM3
-  #define SERCOMx_IRQn            SERCOM3_IRQn
+  #define SERCOMx_0_IRQn          SERCOM3_0_IRQn
+  #define SERCOMx_2_IRQn          SERCOM3_2_IRQn
 #elif CONFIG_ATSAMD_SERIAL_SERCOM4
   #define SERCOMx                 SERCOM4
   #define SERCOMx_GCLK_ID_CORE    SERCOM4_GCLK_ID_CORE
   #define ID_SERCOMx              ID_SERCOM4
-  #define SERCOMx_IRQn            SERCOM4_IRQn
+  #define SERCOMx_0_IRQn          SERCOM4_0_IRQn
+  #define SERCOMx_2_IRQn          SERCOM4_2_IRQn
 #elif CONFIG_ATSAMD_SERIAL_SERCOM5
   #define SERCOMx                 SERCOM5
   #define SERCOMx_GCLK_ID_CORE    SERCOM5_GCLK_ID_CORE
   #define ID_SERCOMx              ID_SERCOM5
-  #define SERCOMx_IRQn            SERCOM5_IRQn
+  #define SERCOMx_0_IRQn          SERCOM5_0_IRQn
+  #define SERCOMx_2_IRQn          SERCOM5_2_IRQn
+#elif CONFIG_ATSAMD_SERIAL_SERCOM6
+  #define SERCOMx                 SERCOM6
+  #define SERCOMx_GCLK_ID_CORE    SERCOM6_GCLK_ID_CORE
+  #define ID_SERCOMx              ID_SERCOM6
+  #define SERCOMx_0_IRQn          SERCOM6_0_IRQn
+  #define SERCOMx_2_IRQn          SERCOM6_2_IRQn
+#elif CONFIG_ATSAMD_SERIAL_SERCOM7
+  #define SERCOMx                 SERCOM7
+  #define SERCOMx_GCLK_ID_CORE    SERCOM7_GCLK_ID_CORE
+  #define ID_SERCOMx              ID_SERCOM7
+  #define SERCOMx_0_IRQn          SERCOM7_0_IRQn
+  #define SERCOMx_2_IRQn          SERCOM7_2_IRQn
 #endif
 
 void
@@ -53,19 +71,20 @@ serial_enable_tx_irq(void)
 }
 
 void
-SERCOMx_Handler(void)
+SERCOMx_DRE_Handler(void)
 {
-    uint32_t status = SERCOMx->USART.INTFLAG.reg;
-    if (status & SERCOM_USART_INTFLAG_RXC)
-        serial_rx_byte(SERCOMx->USART.DATA.reg);
-    if (status & SERCOM_USART_INTFLAG_DRE) {
-        uint8_t data;
-        int ret = serial_get_tx_byte(&data);
-        if (ret)
-            SERCOMx->USART.INTENCLR.reg = SERCOM_USART_INTENSET_DRE;
-        else
-            SERCOMx->USART.DATA.reg = data;
-    }
+    uint8_t data;
+    int ret = serial_get_tx_byte(&data);
+    if (ret)
+        SERCOMx->USART.INTENCLR.reg = SERCOM_USART_INTENSET_DRE;
+    else
+        SERCOMx->USART.DATA.reg = data;
+}
+
+void
+SERCOMx_RXC_Handler(void)
+{
+    serial_rx_byte(SERCOMx->USART.DATA.reg);
 }
 
 void
@@ -93,6 +112,7 @@ serial_init(void)
     // enable irqs
     su->INTENSET.reg = SERCOM_USART_INTENSET_RXC;
     su->CTRLA.reg = areg | SERCOM_USART_CTRLA_ENABLE;
-    armcm_enable_irq(SERCOMx_Handler, SERCOMx_IRQn, 0);
+    armcm_enable_irq(SERCOMx_DRE_Handler, SERCOMx_0_IRQn, 0);
+    armcm_enable_irq(SERCOMx_RXC_Handler, SERCOMx_2_IRQn, 0);
 }
 DECL_INIT(serial_init);
